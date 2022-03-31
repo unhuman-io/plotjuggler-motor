@@ -18,17 +18,34 @@ PlotJugglerMotor::PlotJugglerMotor()
     dataMap().addNumeric(motor->name() + "/torque");
     dataMap().addNumeric(motor->name() + "/motor_encoder");
     cpu_frequency_hz_.push_back(170000000);
+    std::string text_api_name = motor->name() + "/text_api";
+    std::make_shared<PJ::PlotGroup>(text_api_name);
+    std::string api_vars = motor->motor_text()->writeread("help");
+    //std::cout << api_vars;
+    std::istringstream ss(api_vars);
+    std::string var;
+    while(std::getline(ss, var, '\n')) {
+      //std::cout << "api_var " << var << '\n';
+      if(var != "shutdown" && var != "help") {
+        auto& var_series = dataMap().addNumeric(text_api_name + "/" + var)->second;
+        double d = 0;
+        try {
+          d = std::stod((*motor)[var].get());
+        } catch(...) {}
+        var_series.pushBack({0, d});
+      }
+    }
     t_seconds_.push_back(0);
   }
 
   last_statuses_ = m_.read();
 }
 
-bool PlotJugglerMotor::start(QStringList*)
+bool PlotJugglerMotor::start(QStringList* s)
 {
   _running = true;
 
-
+  std::cout << "************" << s  << std::endl;
   pushSingleCycle();
   _thread = std::thread([this]() { this->loop(); });
   return true;
@@ -79,6 +96,27 @@ void PlotJugglerMotor::pushSingleCycle()
     dataMap().numeric.find(motors_[i]->name() + "/iq")->second.pushBack({t_seconds_[i], statuses[i].iq});
     dataMap().numeric.find(motors_[i]->name() + "/torque")->second.pushBack({t_seconds_[i], statuses[i].torque});
     dataMap().numeric.find(motors_[i]->name() + "/motor_encoder")->second.pushBack({t_seconds_[i], (double) statuses[i].motor_encoder});
+
+    if(count % 300 == 0) {
+      std::string api_vars = motors_[i]->motor_text()->writeread("help");
+     // std::cout << api_vars;
+      std::istringstream ss(api_vars);
+      std::string var;
+      while(std::getline(ss, var, '\n')) {
+        if(var != "shutdown" && var != "help") {
+          auto& var_series = dataMap().numeric.find(motors_[i]->name() + "/text_api/" + var)->second;
+         //std::cout << var << std::endl;
+          double d = 0;
+          try {
+            d = std::stod((*motors_[i])[var].get());
+          } catch(...) {}
+          var_series.pushBack({t_seconds_[i], d});
+          if(var == "deadtime") {
+            var_series.setAttribute(TEXT_COLOR, QColor(Qt::green));
+          }
+        }
+      }
+    }
     //std::cout << t_seconds_[i] << std::endl;
   }
   last_statuses_ = statuses;
